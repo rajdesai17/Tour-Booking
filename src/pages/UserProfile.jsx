@@ -1,9 +1,94 @@
-import React from 'react';
-import { User, MapPin, Calendar } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { User, MapPin, Calendar, Phone, Mail } from 'lucide-react';
+import { supabase } from '../lib/supabase';
+import { toast } from 'react-hot-toast';
 
 const UserProfile = () => {
-  const user = JSON.parse(localStorage.getItem('user') || '{"name": "Guest", "email": "guest@example.com"}');
-  const bookings = JSON.parse(localStorage.getItem('bookings') || '[]');
+  const [user, setUser] = useState(null);
+  const [bookings, setBookings] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [editMode, setEditMode] = useState(false);
+  const [profileData, setProfileData] = useState({
+    full_name: '',
+    email: '',
+    phone: ''
+  });
+
+  useEffect(() => {
+    const fetchUserData = async () => {
+      try {
+        const storedUser = JSON.parse(localStorage.getItem('user'));
+        setUser(storedUser);
+
+        // Fetch user's profile data
+        const { data: profile, error: profileError } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', storedUser.id)
+          .single();
+
+        if (profileError) throw profileError;
+
+        setProfileData({
+          full_name: profile.full_name,
+          email: profile.email,
+          phone: profile.phone || ''
+        });
+
+        // Fetch user's bookings with tour details
+        const { data: bookingsData, error: bookingsError } = await supabase
+          .from('bookings')
+          .select(`
+            *,
+            tours (
+              name,
+              price,
+              destinations (name, image_url)
+            )
+          `)
+          .eq('user_id', storedUser.id)
+          .order('created_at', { ascending: false });
+
+        if (bookingsError) throw bookingsError;
+        setBookings(bookingsData);
+      } catch (error) {
+        toast.error(error.message);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchUserData();
+  }, []);
+
+  const handleProfileUpdate = async () => {
+    try {
+      const { error } = await supabase
+        .from('profiles')
+        .update({
+          full_name: profileData.full_name,
+          phone: profileData.phone
+        })
+        .eq('id', user.id);
+
+      if (error) throw error;
+
+      // Update local storage
+      localStorage.setItem('user', JSON.stringify({
+        ...user,
+        name: profileData.full_name
+      }));
+
+      toast.success('Profile updated successfully');
+      setEditMode(false);
+    } catch (error) {
+      toast.error(error.message);
+    }
+  };
+
+  if (loading) {
+    return <div>Loading...</div>;
+  }
 
   return (
     <div className="min-h-screen bg-gray-100 py-8">
@@ -14,18 +99,65 @@ const UserProfile = () => {
             <div className="bg-white rounded-lg shadow-md p-6">
               <div className="flex items-center justify-center mb-6">
                 <div className="bg-orange-100 p-4 rounded-full">
-                  <User className="w-12 h-12 text-orange-500" />
+                  <User className="w-8 h-8 text-orange-500" />
                 </div>
               </div>
-              <h2 className="text-2xl font-bold text-center mb-4">{user.name}</h2>
-              <div className="space-y-2">
-                <p className="text-gray-600">
-                  <strong>Email:</strong> {user.email}
-                </p>
-                <p className="text-gray-600">
-                  <strong>Member Since:</strong> {new Date().toLocaleDateString()}
-                </p>
+
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-xl font-semibold">Profile Information</h2>
+                <button
+                  onClick={() => setEditMode(!editMode)}
+                  className="text-orange-500 hover:text-orange-600"
+                >
+                  {editMode ? 'Cancel' : 'Edit'}
+                </button>
               </div>
+
+              {editMode ? (
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-gray-700 mb-2">Full Name</label>
+                    <input
+                      type="text"
+                      value={profileData.full_name}
+                      onChange={(e) => setProfileData({ ...profileData, full_name: e.target.value })}
+                      className="w-full p-2 border rounded-lg"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-gray-700 mb-2">Phone</label>
+                    <input
+                      type="tel"
+                      value={profileData.phone}
+                      onChange={(e) => setProfileData({ ...profileData, phone: e.target.value })}
+                      className="w-full p-2 border rounded-lg"
+                    />
+                  </div>
+                  <button
+                    onClick={handleProfileUpdate}
+                    className="w-full bg-orange-500 text-white px-4 py-2 rounded-lg hover:bg-orange-600"
+                  >
+                    Save Changes
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <div className="flex items-center text-gray-600">
+                    <User className="w-4 h-4 mr-2 text-orange-500" />
+                    <span>{profileData.full_name}</span>
+                  </div>
+                  <div className="flex items-center text-gray-600">
+                    <Mail className="w-4 h-4 mr-2 text-orange-500" />
+                    <span>{profileData.email}</span>
+                  </div>
+                  {profileData.phone && (
+                    <div className="flex items-center text-gray-600">
+                      <Phone className="w-4 h-4 mr-2 text-orange-500" />
+                      <span>{profileData.phone}</span>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
 
@@ -34,24 +166,28 @@ const UserProfile = () => {
             <h2 className="text-2xl font-bold mb-6">My Bookings</h2>
             <div className="space-y-4">
               {bookings.length > 0 ? (
-                bookings.map((booking, index) => (
-                  <div key={index} className="bg-white rounded-lg shadow-md p-6">
+                bookings.map((booking) => (
+                  <div key={booking.id} className="bg-white rounded-lg shadow-md p-6">
                     <div className="flex justify-between items-start">
                       <div>
-                        <h3 className="text-xl font-semibold mb-2">{booking.tourName}</h3>
+                        <h3 className="text-xl font-semibold mb-2">{booking.tours.name}</h3>
                         <div className="space-y-2">
                           <div className="flex items-center text-gray-600">
                             <MapPin className="w-4 h-4 mr-2 text-orange-500" />
-                            <span>{booking.location}</span>
+                            <span>{booking.tours.destinations.name}</span>
                           </div>
                           <div className="flex items-center text-gray-600">
                             <Calendar className="w-4 h-4 mr-2 text-orange-500" />
-                            <span>Booked on: {new Date().toLocaleDateString()}</span>
+                            <span>Booked on: {new Date(booking.created_at).toLocaleDateString()}</span>
                           </div>
                         </div>
                       </div>
-                      <span className="bg-green-100 text-green-800 px-3 py-1 rounded-full text-sm">
-                        Confirmed
+                      <span className={`px-3 py-1 rounded-full text-sm ${
+                        booking.status === 'confirmed' 
+                          ? 'bg-green-100 text-green-800'
+                          : 'bg-yellow-100 text-yellow-800'
+                      }`}>
+                        {booking.status.charAt(0).toUpperCase() + booking.status.slice(1)}
                       </span>
                     </div>
                     <div className="mt-4 pt-4 border-t">
@@ -59,7 +195,7 @@ const UserProfile = () => {
                       <div className="grid grid-cols-2 gap-4">
                         <div>
                           <p className="text-gray-600">
-                            <strong>Leader:</strong> {booking.leaderName}
+                            <strong>Leader:</strong> {booking.leader_name}
                           </p>
                           <p className="text-gray-600">
                             <strong>Email:</strong> {booking.email}
@@ -70,7 +206,7 @@ const UserProfile = () => {
                             <strong>Phone:</strong> {booking.phone}
                           </p>
                           <p className="text-gray-600">
-                            <strong>Status:</strong> Payment Verified
+                            <strong>Number of People:</strong> {booking.number_of_people}
                           </p>
                         </div>
                       </div>
@@ -90,4 +226,4 @@ const UserProfile = () => {
   );
 };
 
-export default UserProfile;
+export default UserProfile; 

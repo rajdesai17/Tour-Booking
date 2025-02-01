@@ -1,47 +1,87 @@
 import React, { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { supabase } from '../lib/supabase';
+import { toast } from 'react-hot-toast';
 import TourCard from '../components/TourCard';
-
-const defaultTours = [
-  {
-    id: '1',
-    image: 'https://images.unsplash.com/photo-1565836653595-2899d4e46d94',
-    name: 'Paris Adventure',
-    location: 'Paris, France',
-    price: 1299,
-    maxPeople: 12,
-    date: '2024-06-15'
-  },
-  {
-    id: '2',
-    image: 'https://images.unsplash.com/photo-1533050487297-09b450131914',
-    name: 'Tokyo Explorer',
-    location: 'Tokyo, Japan',
-    price: 1599,
-    maxPeople: 10,
-    date: '2024-07-20'
-  },
-  // Add 8 more tours here...
-];
 
 const Tours = () => {
   const [searchParams] = useSearchParams();
-  const [filteredTours, setFilteredTours] = useState(defaultTours);
+  const [tours, setTours] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [destinations, setDestinations] = useState([]);
 
   useEffect(() => {
-    const location = searchParams.get('location')?.toLowerCase();
-    setFilteredTours(
-      location
-        ? defaultTours.filter(tour => tour.location.toLowerCase().includes(location))
-        : defaultTours
-    );
+    const fetchTours = async () => {
+      try {
+        const location = searchParams.get('location')?.toLowerCase();
+        
+        let query = supabase
+          .from('tours')
+          .select(`
+            *,
+            destinations (name, image_url)
+          `)
+          .order('created_at', { ascending: false });
+
+        if (location) {
+          query = query.ilike('destinations.name', `%${location}%`);
+        }
+
+        const { data, error } = await query;
+        if (error) throw error;
+
+        setTours(data.map(tour => ({
+          ...tour,
+          image: tour.destinations.image_url,
+          location: tour.destinations.name
+        })));
+
+        // Fetch destinations for the filter
+        const { data: destinationsData, error: destinationsError } = await supabase
+          .from('destinations')
+          .select('*');
+        
+        if (destinationsError) throw destinationsError;
+        setDestinations(destinationsData);
+
+      } catch (error) {
+        toast.error(error.message);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchTours();
   }, [searchParams]);
+
+  if (loading) {
+    return <div>Loading...</div>;
+  }
 
   return (
     <div className="container mx-auto px-4 py-8">
       <h2 className="text-3xl font-bold mb-8">Available Tours</h2>
+      
+      {/* Destinations Filter */}
+      <div className="mb-8 flex flex-wrap gap-2">
+        {destinations.map(dest => (
+          <button
+            key={dest.id}
+            onClick={() => {
+              const searchParams = new URLSearchParams(window.location.search);
+              searchParams.set('location', dest.name);
+              window.history.pushState({}, '', `?${searchParams.toString()}`);
+              window.dispatchEvent(new PopStateEvent('popstate'));
+            }}
+            className="px-4 py-2 rounded-full bg-gray-200 hover:bg-orange-500 hover:text-white transition-colors"
+          >
+            {dest.name}
+          </button>
+        ))}
+      </div>
+
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {filteredTours.map(tour => (
+        {tours.map(tour => (
           <TourCard key={tour.id} tour={tour} />
         ))}
       </div>
@@ -49,4 +89,4 @@ const Tours = () => {
   );
 };
 
-export default Tours;
+export default Tours; 

@@ -1,24 +1,63 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
+import { supabase } from '../lib/supabase';
+import { toast } from 'react-hot-toast';
 
 const Login = () => {
   const navigate = useNavigate();
   const [isAdmin, setIsAdmin] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
     email: '',
     password: ''
   });
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    const user = {
-      id: '1',
-      name: isAdmin ? 'Admin User' : 'Regular User',
-      email: formData.email,
-      isAdmin
-    };
-    localStorage.setItem('user', JSON.stringify(user));
-    navigate(isAdmin ? '/admin/dashboard' : '/');
+    setLoading(true);
+    
+    try {
+      console.log('Login attempt:', formData.email);
+      
+      // 1. Sign in
+      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+        email: formData.email,
+        password: formData.password,
+      });
+
+      if (authError) throw authError;
+
+      // 2. Get profile with admin flag
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', authData.user.id)
+        .single();
+
+      if (profileError) throw profileError;
+
+      // 3. Validate admin status
+      if (isAdmin && !profile.is_admin) {
+        throw new Error('Not authorized as admin');
+      }
+
+      // 4. Store user data
+      localStorage.setItem('user', JSON.stringify({
+        id: authData.user.id,
+        name: profile.full_name,
+        email: authData.user.email,
+        isAdmin: profile.is_admin
+      }));
+
+      toast.success('Login successful!');
+      navigate(profile.is_admin ? '/admin/dashboard' : '/');
+
+    } catch (error) {
+      console.error('Login error:', error);
+      toast.error(error.message);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -56,6 +95,7 @@ const Login = () => {
               onChange={(e) => setFormData({ ...formData, email: e.target.value })}
               className="w-full p-2 border rounded-lg focus:border-orange-500 outline-none"
               required
+              disabled={loading}
             />
           </div>
 
@@ -67,15 +107,24 @@ const Login = () => {
               onChange={(e) => setFormData({ ...formData, password: e.target.value })}
               className="w-full p-2 border rounded-lg focus:border-orange-500 outline-none"
               required
+              disabled={loading}
             />
           </div>
 
           <button
             type="submit"
-            className="w-full bg-orange-500 text-white py-2 rounded-lg hover:bg-orange-600 transition-colors"
+            className="w-full bg-orange-500 text-white py-2 rounded-lg hover:bg-orange-600 transition-colors disabled:bg-gray-400"
+            disabled={loading}
           >
-            Login
+            {loading ? 'Logging in...' : 'Login'}
           </button>
+
+          <p className="text-center text-gray-600 mt-4">
+            Don't have an account?{' '}
+            <Link to="/register" className="text-orange-500 hover:text-orange-600">
+              Register here
+            </Link>
+          </p>
         </form>
       </div>
     </div>

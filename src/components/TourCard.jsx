@@ -1,24 +1,42 @@
 import React, { useState } from 'react';
 import { MapPin, Users, Calendar } from 'lucide-react';
+import { supabase } from '../lib/supabase';
+import { toast } from 'react-hot-toast';
 import BookingForm from './BookingForm';
 
 const TourCard = ({ tour }) => {
   const [showBookingForm, setShowBookingForm] = useState(false);
+  const user = JSON.parse(localStorage.getItem('user'));
 
-  const handleBooking = (formData) => {
-    // Here you would typically send the booking data to your backend
-    const bookingData = {
-      tourId: tour.id,
-      tourName: tour.name,
-      ...formData
-    };
-    
-    // Store booking in localStorage for now
-    const bookings = JSON.parse(localStorage.getItem('bookings') || '[]');
-    bookings.push(bookingData);
-    localStorage.setItem('bookings', JSON.stringify(bookings));
-    
-    console.log('Booking submitted:', bookingData);
+  const handleBooking = async (formData) => {
+    try {
+      if (!user) {
+        toast.error('Please login to book a tour');
+        return;
+      }
+
+      const bookingData = {
+        tour_id: tour.id,
+        user_id: user.id,
+        leader_name: formData.leaderName,
+        email: formData.email,
+        phone: formData.phone,
+        number_of_people: parseInt(formData.numberOfPeople),
+        status: 'pending',
+        created_at: new Date().toISOString()
+      };
+
+      const { error } = await supabase
+        .from('bookings')
+        .insert([bookingData]);
+
+      if (error) throw error;
+
+      toast.success('Booking submitted successfully!');
+      setShowBookingForm(false);
+    } catch (error) {
+      toast.error(error.message);
+    }
   };
 
   return (
@@ -40,7 +58,7 @@ const TourCard = ({ tour }) => {
             
             <div className="flex items-center text-gray-600">
               <Users className="w-4 h-4 mr-2 text-orange-500" />
-              <span>Max: {tour.maxPeople} people</span>
+              <span>Max: {tour.max_people} people</span>
             </div>
             
             <div className="flex items-center text-gray-600">
@@ -54,7 +72,13 @@ const TourCard = ({ tour }) => {
               ${tour.price}
             </span>
             <button 
-              onClick={() => setShowBookingForm(true)}
+              onClick={() => {
+                if (!user) {
+                  toast.error('Please login to book a tour');
+                  return;
+                }
+                setShowBookingForm(true);
+              }}
               className="bg-orange-500 text-white px-4 py-2 rounded-full hover:bg-orange-600 transition-colors"
             >
               Book Now
@@ -67,6 +91,7 @@ const TourCard = ({ tour }) => {
         <BookingForm
           tourId={tour.id}
           tourName={tour.name}
+          maxPeople={tour.max_people}
           onClose={() => setShowBookingForm(false)}
           onSubmit={handleBooking}
         />
@@ -75,4 +100,4 @@ const TourCard = ({ tour }) => {
   );
 };
 
-export default TourCard;
+export default TourCard; 
